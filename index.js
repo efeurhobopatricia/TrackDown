@@ -19,83 +19,33 @@ var hostURL="https://trackdown-ltxg.onrender.com";
 //TOGGLE for Shorters
 var use1pt=true;
 
-// Function to create custom is.gd short link
-async function createIsGdShortLink(longUrl, customSlug) {
+// Custom Tiny URL API configuration
+const TINY_API_URL = "https://empiretech-api.hf.space/api/shortener/tiny";
+const API_KEY = "efe123";
+
+// Function to create custom tiny short link
+async function createTinyShortLink(longUrl) {
     try {
-        // First, try to create with custom slug
-        let apiUrl = `https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}&shorturl=${encodeURIComponent(customSlug)}`;
+        const response = await fetch(`${TINY_API_URL}?apikey=${API_KEY}&url=${encodeURIComponent(longUrl)}`);
         
-        const response = await fetch(apiUrl);
-        const result = await response.text();
-        
-        // Check if the response contains an error
-        if (result.startsWith('Error:')) {
-            console.log(`is.gd error with custom slug: ${result}`);
+        if (!response.ok) {
+            console.log(`Tiny URL API error: ${response.status}`);
             return null;
         }
         
-        return result;
+        const data = await response.json();
+        
+        // Check if the API call was successful and has a result
+        if (data.success === true && data.result) {
+            return data.result;
+        } else {
+            console.log('API returned error:', data);
+            return null;
+        }
     } catch (error) {
-        console.error('is.gd shortening error:', error);
+        console.error('Tiny URL shortening error:', error);
         return null;
     }
-}
-
-// Function to generate custom slug from URL
-function generateCustomSlugFromUrl(url) {
-    try {
-        // Remove protocol
-        let domain = url.replace(/^https?:\/\//i, '');
-        // Remove www if present
-        domain = domain.replace(/^www\./i, '');
-        // Remove path and query parameters
-        domain = domain.split('/')[0];
-        // Replace dots with underscores (is.gd allows letters, numbers, underscores)
-        domain = domain.replace(/\./g, '_');
-        // Remove any other invalid characters
-        domain = domain.replace(/[^a-zA-Z0-9_]/g, '');
-        // Limit length (is.gd max is 30 characters)
-        domain = domain.substring(0, 30);
-        return domain;
-    } catch (error) {
-        return null;
-    }
-}
-
-// Function to create both short links (they will be different since URLs are different)
-async function createBothShortLinks(cUrl, wUrl, baseSlug) {
-    let cShortUrl = null;
-    let wShortUrl = null;
-    
-    // Try different variations for cloudflare and webview
-    // is.gd needs unique slugs for different URLs, so we'll try different patterns
-    
-    // Try for cloudflare link
-    let attempt = 0;
-    while (!cShortUrl && attempt < 3) {
-        let slugAttempt = baseSlug;
-        if (attempt === 1) slugAttempt = baseSlug + "1";
-        if (attempt === 2) slugAttempt = baseSlug + "2";
-        
-        cShortUrl = await createIsGdShortLink(cUrl, slugAttempt);
-        if (!cShortUrl) attempt++;
-        else break;
-    }
-    
-    // Try for webview link (must be different from cloudflare slug)
-    attempt = 0;
-    while (!wShortUrl && attempt < 3) {
-        let slugAttempt = baseSlug;
-        if (attempt === 0) slugAttempt = baseSlug + "web";
-        if (attempt === 1) slugAttempt = baseSlug + "view";
-        if (attempt === 2) slugAttempt = baseSlug + "page";
-        
-        wShortUrl = await createIsGdShortLink(wUrl, slugAttempt);
-        if (!wShortUrl) attempt++;
-        else break;
-    }
-    
-    return { cShortUrl, wShortUrl };
 }
 
 app.get("/w/:path/:uri",(req,res)=>{
@@ -196,27 +146,9 @@ async function createLink(cid, msg) {
         bot.sendChatAction(cid, "typing");
         
         if (use1pt) {
-            // Generate custom slug from the original URL
-            const baseSlug = generateCustomSlugFromUrl(msg);
-            
-            let cShortUrl = null;
-            let wShortUrl = null;
-            
-            if (baseSlug) {
-                // Try to create both short links with custom slugs
-                const results = await createBothShortLinks(cUrl, wUrl, baseSlug);
-                cShortUrl = results.cShortUrl;
-                wShortUrl = results.wShortUrl;
-            }
-            
-            // If custom slug failed for any link, try without custom slug
-            if (!cShortUrl) {
-                cShortUrl = await createIsGdShortLink(cUrl, null);
-            }
-            
-            if (!wShortUrl) {
-                wShortUrl = await createIsGdShortLink(wUrl, null);
-            }
+            // Create both short links
+            let cShortUrl = await createTinyShortLink(cUrl);
+            let wShortUrl = await createTinyShortLink(wUrl);
             
             // Format the response
             let response = `New links has been created successfully. You can use any one of the below links.\nURL: ${msg}\n\n✅Your Links\n\n`;
